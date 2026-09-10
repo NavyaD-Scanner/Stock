@@ -284,10 +284,6 @@ elif st.session_state.page == 2:
  
     # Safe Guard: Ensure rows is not empty before building summary_df
     if len(rows) > 0:
-        summary_df = pd.DataFrame(rows).sort_valu
- 
-    # Safe Guard: Ensure rows is not empty before building summary_df
-    if len(rows) > 0:
         summary_df = pd.DataFrame(rows).sort_values(by="Score", ascending=False)
         st.subheader("Asset Comparison Matrix (Hover column headers for info)")
         
