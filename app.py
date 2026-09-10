@@ -9,12 +9,12 @@ import plotly.graph_objects as go
 # Configuration & Layout
 # -------------------------------------------------------------
 st.set_page_config(
-    page_title="Institutional Equity Terminal & Live Charting",
+    page_title="Institutional Equity Terminal & Screener",
     page_icon="📈",
     layout="wide"
 )
  
-# Core Watchlist
+# Default Watchlist
 DEFAULT_WATCHLIST = {
     "Prince Pipes": "PRINCEPIPE.NS",
     "HUDCO": "HUDCO.NS",
@@ -25,21 +25,34 @@ DEFAULT_WATCHLIST = {
     "IRFC": "IRFC.NS"
 }
  
-# Algorithmic Suggestions from Broader Market
+# Curated High-Probability Suggestion Candidates
 SUGGESTIONS = {
     "PFC (Power Finance Corp)": "PFC.NS",
     "BEL (Bharat Electronics)": "BEL.NS",
     "Trent Ltd": "TRENT.NS",
     "Coal India": "COALINDIA.NS",
-    "RVNL (Rail Vikas Nigam)": "RVNL.NS",
-    "BHEL": "BHEL.NS"
+    "RVNL (Rail Vikas)": "RVNL.NS",
+    "BHEL": "BHEL.NS",
+    "Tata Power": "TATAPOWER.NS"
 }
  
-# Session State Management
+# -------------------------------------------------------------
+# Session State Initialization
+# -------------------------------------------------------------
 if "page" not in st.session_state:
     st.session_state.page = 1
+ 
+# Master dictionary of Name -> NSE Ticker mapping
+if "ticker_registry" not in st.session_state:
+    initial_registry = dict(DEFAULT_WATCHLIST)
+    initial_registry.update(SUGGESTIONS)
+    st.session_state.ticker_registry = initial_registry
+ 
+# List of currently active stock names to analyze
 if "selected_stocks" not in st.session_state:
     st.session_state.selected_stocks = list(DEFAULT_WATCHLIST.keys())
+ 
+# Current stock selected for deep dive on Page 3
 if "active_stock" not in st.session_state:
     st.session_state.active_stock = "REC Ltd"
  
@@ -51,7 +64,7 @@ def inspect_stock(name):
     st.session_state.page = 3
  
 # -------------------------------------------------------------
-# Math & Indicators Engine
+# Quantitative Indicators & Data Engine
 # -------------------------------------------------------------
 def calculate_rsi(series: pd.Series, period: int = 14) -> pd.Series:
     delta = series.diff()
@@ -70,17 +83,16 @@ def calculate_macd(series: pd.Series):
  
 @st.cache_data(ttl=600)
 def fetch_stock_data(ticker_symbol: str):
-    ticker_clean = ticker_symbol.strip().upper()
-    if not ticker_clean.endswith(".NS") and not ticker_clean.endswith(".BO"):
-        ticker_clean += ".NS"
+    clean_ticker = ticker_symbol.strip().upper()
+    if not clean_ticker.endswith(".NS") and not clean_ticker.endswith(".BO"):
+        clean_ticker = clean_ticker + ".NS"
         
-    stock = yf.Ticker(ticker_clean)
+    stock = yf.Ticker(clean_ticker)
     df = stock.history(period="1y", interval="1d")
     
     if df.empty or len(df) < 25:
         return None, dict()
     
-    # Technicals
     df['SMA_20'] = df['Close'].rolling(window=20).mean()
     df['SMA_50'] = df['Close'].rolling(window=50).mean()
     df['SMA_200'] = df['Close'].rolling(window=200).mean()
@@ -100,13 +112,12 @@ def fetch_stock_data(ticker_symbol: str):
     return df, info_data
  
 # -------------------------------------------------------------
-# Sidebar: Navigation & Controls
+# Sidebar Navigation & Settings
 # -------------------------------------------------------------
-st.sidebar.title("Navigation & Parameters")
+st.sidebar.title("Terminal Navigation")
  
-# Sidebar Direct Navigation Option
 app_mode = st.sidebar.radio(
-    "Go To Page:",
+    "Jump to Step:",
     ["1. Stock Selector & Add", "2. Comparison Screener", "3. Deep-Dive & Live Chart"],
     index=st.session_state.page - 1
 )
@@ -122,29 +133,36 @@ elif app_mode.startswith("3") and st.session_state.page != 3:
     st.rerun()
  
 st.sidebar.divider()
-st.sidebar.subheader("Position Sizing Controls")
-portfolio_size = st.sidebar.number_input("Total Trading Capital (₹)", value=1000000, step=50000)
-risk_per_trade_pct = st.sidebar.slider("Max Account Risk per Trade (%)", 0.25, 3.0, 1.0, 0.05)
+st.sidebar.subheader("Risk Parameters")
+portfolio_size = st.sidebar.number_input("Portfolio Equity (₹)", value=1000000, step=50000)
+risk_per_trade_pct = st.sidebar.slider("Risk Limit per Trade (%)", 0.25, 3.0, 1.0, 0.05)
  
 st.sidebar.divider()
-st.sidebar.subheader("Quick Switch Stock (Page 3)")
-selected_quick = st.sidebar.selectbox("Active Stock:", st.session_state.selected_stocks, index=0)
+st.sidebar.subheader("Quick Stock Switcher")
+# Ensure current active stock is selectable in sidebar
+available_stocks = [s for s in st.session_state.selected_stocks if s in st.session_state.ticker_registry]
+if not available_stocks:
+    available_stocks = list(DEFAULT_WATCHLIST.keys())
+ 
+current_idx = available_stocks.index(st.session_state.active_stock) if st.session_state.active_stock in available_stocks else 0
+selected_quick = st.sidebar.selectbox("Active Stock (Page 3):", available_stocks, index=current_idx)
+ 
 if selected_quick != st.session_state.active_stock:
     st.session_state.active_stock = selected_quick
     if st.session_state.page == 3:
         st.rerun()
  
 # =============================================================
-# PAGE 1: Stock Selection & Suggestions
+# PAGE 1: Stock Selection & Suggestion Addition
 # =============================================================
 if st.session_state.page == 1:
     st.title("Step 1: Build Your Watchlist")
-    st.write("Select from default universe, enter custom NSE tickers, or pick from our curated market recommendations.")
+    st.write("Select preset stocks, add our suggested market tickers, or type any custom NSE equity.")
  
     col1, col2 = st.columns([1.2, 1])
  
     with col1:
-        st.subheader("Current Watchlist Selection")
+        st.subheader("Default Watchlist Selection")
         selected_presets = st.multiselect(
             "Select tickers to evaluate:",
             options=list(DEFAULT_WATCHLIST.keys()),
@@ -153,44 +171,61 @@ if st.session_state.page == 1:
  
         st.subheader("Manual Custom Addition")
         custom_input = st.text_input("Enter NSE Symbols (comma separated, e.g. TRENT, BEL, COALINDIA):", "")
-        custom_tickers = [x.strip().upper() for x in custom_input.split(",") if x.strip()]
  
     with col2:
-        st.subheader("Smart Suggestions (High-Beta / Value Catalysts)")
-        st.caption("Curated picks displaying strong sector rotation or mean-reversion characteristics:")
+        st.subheader("Smart Suggestions (High-Probability Catalysts)")
+        st.caption("Check any of these stocks to include them in the screener table and full deep-dive pages:")
         picked_suggestions = []
-        for name, tick in SUGGESTIONS.items():
-            if st.checkbox(f"{name} ({tick})", value=False, key=f"sug_{tick}"):
-                picked_suggestions.append(name.split(" ")[0])
+        for name, ticker_code in SUGGESTIONS.items():
+            # Check if this suggestion was already previously selected
+            is_checked = name in st.session_state.selected_stocks
+            if st.checkbox(name + " (" + ticker_code + ")", value=is_checked, key="chk_" + ticker_code):
+                picked_suggestions.append(name)
  
     st.write("")
-    if st.button("Generate Comparative Overview Table", type="primary", use_container_width=True):
-        combined = list(set(selected_presets + custom_tickers + picked_suggestions))
-        if not combined:
+    if st.button("🚀 Analyze & Generate Overview Table", type="primary", use_container_width=True):
+        custom_tickers = [x.strip().upper() for x in custom_input.split(",") if x.strip()]
+        
+        # Register custom tickers in global dictionary
+        for c in custom_tickers:
+            st.session_state.ticker_registry[c] = c + ".NS"
+ 
+        # Combine presets, suggestions, and custom tickers
+        final_list = list(selected_presets)
+        for s in picked_suggestions:
+            if s not in final_list:
+                final_list.append(s)
+        for c in custom_tickers:
+            if c not in final_list:
+                final_list.append(c)
+ 
+        if not final_list:
             st.error("Please select at least one stock to proceed.")
         else:
-            st.session_state.selected_stocks = combined
+            st.session_state.selected_stocks = final_list
+            if st.session_state.active_stock not in final_list:
+                st.session_state.active_stock = final_list[0]
             navigate_to(2)
             st.rerun()
  
 # =============================================================
-# PAGE 2: Comparison Dashboard with Hover Tooltips
+# PAGE 2: Comparison Dashboard with Tooltips
 # =============================================================
 elif st.session_state.page == 2:
-    st.title("Step 2: Multi-Asset Comparative Overview")
+    st.title("Step 2: Multi-Asset Comparative Screener")
     
     col_nav1, col_nav2 = st.columns([1, 4])
     with col_nav1:
-        if st.button("Back to Stock Selection"):
+        if st.button("⬅️ Back to Stock Selection"):
             navigate_to(1)
             st.rerun()
  
     rows = []
     failed = []
  
-    with st.spinner("Fetching market quotes, computing indicators, and evaluating setup scores..."):
+    with st.spinner("Fetching market quotes, indicators, and asymmetric scores..."):
         for item in st.session_state.selected_stocks:
-            ticker = DEFAULT_WATCHLIST.get(item, item if item.endswith(".NS") else item + ".NS")
+            ticker = st.session_state.ticker_registry.get(item, item if item.endswith(".NS") else item + ".NS")
             df, info = fetch_stock_data(ticker)
             
             if df is not None:
@@ -206,7 +241,7 @@ elif st.session_state.page == 2:
                 div_yield = round(float(dy_raw) * 100, 2) if dy_raw else 0.0
                 dist_to_low = round(((cmp_price - low_52w) / (low_52w + 1e-5)) * 100, 2)
                 
-                # Scoring
+                # Asymmetry score logic
                 score = 0
                 if pd.notna(pe) and pe < 15: score += 2
                 if div_yield > 3.0: score += 2
@@ -220,7 +255,7 @@ elif st.session_state.page == 2:
                     "52W Low (₹)": low_52w,
                     "Dist to 52W Low (%)": dist_to_low,
                     "P/E Ratio": pe if pd.notna(pe) else "N/A",
-                    "Div Yield (%)": f"{div_yield}%",
+                    "Div Yield (%)": str(div_yield) + "%",
                     "RSI (14)": rsi_val,
                     "Score": score
                 })
@@ -229,53 +264,54 @@ elif st.session_state.page == 2:
  
     if rows:
         summary_df = pd.DataFrame(rows).sort_values(by="Score", ascending=False)
-        st.subheader("Asset Comparison Matrix (Hover column headers for info)")
+        st.subheader("Asset Comparison Matrix (Hover headers for explanations)")
         
-        # Interactive Table with Hover Tooltips
+        # Interactive table with column hover tooltips
         st.dataframe(
             summary_df,
             use_container_width=True,
             column_config={
                 "Stock": st.column_config.TextColumn("Stock", help="Name or ticker symbol of the equity."),
-                "CMP (₹)": st.column_config.NumberColumn("CMP (₹)", help="Current Market Price based on the latest NSE session close."),
-                "52W High (₹)": st.column_config.NumberColumn("52W High (₹)", help="Highest traded price over the last 252 trading sessions. Key structural resistance."),
-                "52W Low (₹)": st.column_config.NumberColumn("52W Low (₹)", help="Lowest traded price over the last 252 sessions. Acts as multi-month floor support."),
-                "Dist to 52W Low (%)": st.column_config.NumberColumn("Dist to 52W Low (%)", help="Percentage distance from 52-week low. Values below 8% signify potential bottom defense zones with tight stop-loss placement."),
-                "P/E Ratio": st.column_config.TextColumn("P/E Ratio", help="Trailing Twelve Month Price-to-Earnings ratio. <15 indicates value; >50 indicates high premium."),
-                "Div Yield (%)": st.column_config.TextColumn("Div Yield (%)", help="Annualized dividend yield. >3% provides a defensive valuation floor during corrections."),
-                "RSI (14)": st.column_config.NumberColumn("RSI (14)", help="14-day Relative Strength Index. <30 is Oversold (potential rebound); >70 is Overbought."),
-                "Score": st.column_config.ProgressColumn("Score", help="Proprietary Asymmetry Score (0 to 9). Higher scores reflect favorable risk-reward setups (low P/E, high yield, oversold RSI, close to structural support).", min_value=0, max_value=9)
+                "CMP (₹)": st.column_config.NumberColumn("CMP (₹)", help="Current Market Price based on latest NSE session close."),
+                "52W High (₹)": st.column_config.NumberColumn("52W High (₹)", help="Highest traded price in 52 weeks. Structural overhead resistance."),
+                "52W Low (₹)": st.column_config.NumberColumn("52W Low (₹)", help="Lowest traded price in 52 weeks. Represents long-term support base."),
+                "Dist to 52W Low (%)": st.column_config.NumberColumn("Dist to 52W Low (%)", help="Percentage distance from 52-week low. Under 8% offers tight risk-defined trade setups."),
+                "P/E Ratio": st.column_config.TextColumn("P/E Ratio", help="Trailing Twelve Month Price-to-Earnings ratio. <15 represents value, >50 implies premium growth."),
+                "Div Yield (%)": st.column_config.TextColumn("Div Yield (%)", help="Annual dividend yield. >3% provides a defensive cushion against market corrections."),
+                "RSI (14)": st.column_config.NumberColumn("RSI (14)", help="14-Day Relative Strength Index. Below 35 indicates oversold rebound potential; above 70 indicates overbought."),
+                "Score": st.column_config.ProgressColumn("Score", help="Opportunity Score (0-9). Evaluates asymmetric risk-reward based on support proximity, valuation, and oversold indicators.", min_value=0, max_value=9)
             }
         )
  
-        st.subheader("Select Stock to View Live Chart & Full Breakdown:")
+        st.subheader("🔍 Click a stock to open Live Chart & Full Breakdown:")
         n_cols = min(len(summary_df), 4)
         btn_cols = st.columns(n_cols if n_cols > 0 else 1)
         for index, row in summary_df.reset_index().iterrows():
             col_idx = index % (n_cols if n_cols > 0 else 1)
             with btn_cols[col_idx]:
-                if st.button(f"{row['Stock']} (Score: {row['Score']})", key=f"btn_{row['Stock']}", use_container_width=True):
-                    inspect_stock(row['Stock'])
+                btn_name = row['Stock']
+                if st.button(btn_name + " (Score: " + str(row['Score']) + ")", key="btn_" + str(btn_name), use_container_width=True):
+                    inspect_stock(btn_name)
                     st.rerun()
  
     if failed:
-        st.warning(f"Could not load data for: {', '.join(failed)}. Ensure symbol is valid on NSE.")
+        st.warning("Could not fetch data for: " + ", ".join(failed) + ". Please check ticker spelling.")
  
 # =============================================================
 # PAGE 3: Live Chart & Comprehensive Deep Dive
 # =============================================================
 elif st.session_state.page == 3:
     stock_name = st.session_state.active_stock
-    ticker = DEFAULT_WATCHLIST.get(stock_name, stock_name if stock_name.endswith(".NS") else stock_name + ".NS")
-    symbol_tv = ticker.replace(".NS", "")
+    ticker = st.session_state.ticker_registry.get(stock_name, stock_name if stock_name.endswith(".NS") else stock_name + ".NS")
+    symbol_tv = ticker.replace(".NS", "").replace(".BO", "")
     
     col_back, col_title = st.columns([1, 5])
     with col_back:
-        if st.button("Back to Table"):
+        if st.button("⬅️ Back to Table"):
             navigate_to(2)
             st.rerun()
     with col_title:
-        st.title(f"Detailed Analysis: {stock_name} (NSE: {symbol_tv})")
+        st.title("Detailed Analysis: " + stock_name + " (NSE: " + symbol_tv + ")")
  
     df, info = fetch_stock_data(ticker)
  
@@ -291,7 +327,7 @@ elif st.session_state.page == 3:
         sma_50 = round(float(df['SMA_50'].iloc[-1]), 2) if not pd.isna(df['SMA_50'].iloc[-1]) else round(cmp_price * 1.05, 2)
         sma_200 = round(float(df['SMA_200'].iloc[-1]), 2) if not pd.isna(df['SMA_200'].iloc[-1]) else round(cmp_price * 1.10, 2)
  
-        # Risk Math & Targets
+        # Risk Management Engine
         sl = round(low_52w * 0.99, 2)
         risk_per_share = round(cmp_price - sl, 2)
         if risk_per_share <= 0:
@@ -307,19 +343,18 @@ elif st.session_state.page == 3:
         t3 = round(cmp_price + (risk_per_share * 3.0), 2)
         rr_ratio = round((t2 - cmp_price) / (risk_per_share + 1e-5), 2)
  
-        # Top Metric Cards
+        # Overview Metrics
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("CMP", f"₹{cmp_price}")
-        m2.metric("Calculated Stop-Loss", f"₹{sl}", f"-₹{risk_per_share} risk/sh")
-        m3.metric("Target 1 (50 DMA)", f"₹{t1}", f"+{round(((t1 - cmp_price)/cmp_price)*100, 1)}%")
-        m4.metric("Position Size", f"{position_qty} Shares", f"Risk: ₹{int(max_risk_inr):,}")
+        m1.metric("CMP", "₹" + str(cmp_price))
+        m2.metric("Stop-Loss (Exit)", "₹" + str(sl), "-₹" + str(risk_per_share))
+        m3.metric("Target 1 (50 DMA)", "₹" + str(t1), "+" + str(round(((t1 - cmp_price)/cmp_price)*100, 1)) + "%")
+        m4.metric("Recommended Qty", str(position_qty) + " Shares", "Max Risk: ₹" + str(int(max_risk_inr)))
  
-        # Live Chart vs Static Indicator Chart Toggle
-        chart_mode = st.radio("Chart Engine:", ["Live TradingView Advanced Chart", "Technical Indicators & Moving Averages"], horizontal=True)
+        # Chart Engine Selector
+        chart_mode = st.radio("Chart View:", ["Live TradingView Advanced Chart", "Technical Indicators & Moving Averages"], horizontal=True)
  
         if chart_mode == "Live TradingView Advanced Chart":
             st.caption("Live streaming candlestick chart powered by TradingView. Supports drawings, sub-minute intervals, and direct indicators.")
-            # Embed TradingView Advanced Real-Time Widget
             tv_html = f"""
             <div class="tradingview-widget-container" style="height:550px;width:100%;">
               <div id="tradingview_widget" style="height:calc(100% - 32px);width:100%;"></div>
@@ -357,7 +392,7 @@ elif st.session_state.page == 3:
             fig.add_hline(y=t1, line_dash="dot", line_color="green", annotation_text="Target 1 (50 DMA)")
  
             fig.update_layout(
-                title=f"{stock_name} Technical Structure with Key DMAs",
+                title=stock_name + " Daily Price Action with Key DMAs",
                 xaxis_rangeslider_visible=False,
                 template="plotly_dark",
                 height=500,
@@ -365,7 +400,7 @@ elif st.session_state.page == 3:
             )
             st.plotly_chart(fig, use_container_width=True)
  
-        # Tabbed Analysis Section
+        # Tabbed Detail Analysis
         tab1, tab2, tab3, tab4 = st.tabs([
             "📋 Execution Plan", 
             "📈 Technical Analysis", 
@@ -376,27 +411,27 @@ elif st.session_state.page == 3:
         with tab1:
             st.markdown("### Actionable Trade Setup")
             st.write(f"* **Entry Range:** ₹{round(cmp_price * 0.99, 2)} – ₹{cmp_price}")
-            st.write(f"* **Protective Stop-Loss:** ₹{sl} (Placed 1% below structural 52-week support of ₹{low_52w})")
-            st.write(f"* **Target 1 (50 DMA Retest):** ₹{t1} *(Exit 40%)*")
-            st.write(f"* **Target 2 (200 DMA Mean Reversion):** ₹{t2} *(Exit 35%)*")
-            st.write(f"* **Target 3 (Swing High):** ₹{t3} *(Exit 25%)*")
+            st.write(f"* **Protective Stop-Loss:** ₹{sl} *(1% below 52-week support of ₹{low_52w})*")
+            st.write(f"* **Target 1 (50 DMA Retest):** ₹{t1} *(Book 40%)*")
+            st.write(f"* **Target 2 (200 DMA Mean Reversion):** ₹{t2} *(Book 35%)*")
+            st.write(f"* **Target 3 (Swing High):** ₹{t3} *(Book 25%)*")
             st.write(f"* **Risk-to-Reward Ratio:** 1 : {rr_ratio}")
-            st.write(f"* **Allocated Capital Required:** ₹{capital_outlay:,.2f}")
+            st.write(f"* **Allocated Capital Outlay:** ₹{capital_outlay:,.2f}")
  
         with tab2:
-            st.markdown("### Detailed Technical Indicators")
+            st.markdown("### Technical Indicator Summary")
             t_col1, t_col2 = st.columns(2)
             with t_col1:
-                st.write(f"* **14-Day RSI:** `{rsi_val}` ({'Oversold Rebound Zone' if rsi_val < 35 else 'Neutral Drift' if rsi_val <= 60 else 'Overbought'})")
+                st.write(f"* **14-Day RSI:** `{rsi_val}` ({'Oversold Rebound Zone' if rsi_val < 35 else 'Neutral' if rsi_val <= 60 else 'Overbought'})")
                 st.write(f"* **MACD Line:** `{macd_val}` | **Signal Line:** `{macd_sig}`")
-                st.write(f"* **MACD Histogram:** `{'Positive Divergence / Bullish' if macd_val > macd_sig else 'Bearish Momentum'}`")
+                st.write(f"* **MACD Histogram:** `{'Bullish Divergence' if macd_val > macd_sig else 'Bearish Pressure'}`")
             with t_col2:
                 st.write(f"* **20 DMA:** ₹{sma_20} ({'Above' if cmp_price > sma_20 else 'Below'})")
                 st.write(f"* **50 DMA:** ₹{sma_50} ({'Above' if cmp_price > sma_50 else 'Below'})")
-                st.write(f"* **200 DMA:** ₹{sma_200} ({'Bullish Long-term Trend' if cmp_price > sma_200 else 'Corrective Phase'})")
+                st.write(f"* **200 DMA:** ₹{sma_200} ({'Bullish Long-term' if cmp_price > sma_200 else 'Corrective Phase'})")
  
         with tab3:
-            st.markdown("### Fundamental Metrics & Health")
+            st.markdown("### Fundamental Metrics & Financial Health")
             pe_val = info.get('trailingPE', 'N/A')
             pb_val = info.get('priceToBook', 'N/A')
             dy = round(info.get('dividendYield', 0) * 100, 2) if info.get('dividendYield') else 0.0
@@ -416,13 +451,13 @@ elif st.session_state.page == 3:
                 st.write(f"* **Net Profit Margin:** {pm}%" if pm != 'N/A' else "* **Net Profit Margin:** N/A")
                 st.write(f"* **Debt to Equity:** {de}")
  
-            st.write("**Company Business Profile:**")
+            st.write("**Business Description:**")
             summary = info.get('longBusinessSummary', 'No description available for this ticker.')
             st.write(summary[:650] + "...")
  
         with tab4:
-            st.error(f"**Trade Invalidation:** A daily close below ₹{sl} breaks structural support. Exit all positions immediately to protect portfolio equity.")
-            st.warning("Ensure position risk does not exceed your defined capital limits. PSU stocks carry policy and disinvestment beta.")
+            st.error(f"**Trade Invalidation:** A daily close below ₹{sl} breaks structural support. Close open positions immediately to preserve capital.")
+            st.warning("Adhere to your risk parameters. Do not exceed allocated risk per trade.")
     else:
-        st.error("Unable to load data for this ticker. Verify the symbol on NSE.")
+        st.error("Unable to load data for this symbol. Check that the ticker exists on NSE.")
  
