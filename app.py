@@ -287,14 +287,12 @@ elif st.session_state.page == 2:
                     "CMP (₹)": cmp_price,
                     "52W High (₹)": high_52w,
                     "52W Low (₹)": low_52w,
-                    "Dist to 52W Low (%)": dist_
- 
-                "Dist to 52W Low (%)": st.column_config.NumberColumn("Dist to 52W Low (%)", help="Percentage distance above 52-week low. Lower values offer high-probability support entries."),
-                "P/E Ratio": st.column_config.TextColumn("P/E Ratio", help="Trailing Twelve Month Price-to-Earnings ratio. Lower indicates attractive value."),
-                "Div Yield (%)": st.column_config.TextColumn("Div Yield (%)", help="Annualized dividend yield percentage."),
-                "RSI (14)": st.column_config.NumberColumn("RSI (14)", help="Relative Strength Index. <35 indicates oversold rebound potential; >70 is overbought."),
-                "Recent Pattern": st.column_config.TextColumn("Recent Pattern", help="Candlestick pattern identified in recent trading sessions (Engulfing, Hammer, Shooting Star)."),
-                "Score": st.column_config.ProgressColumn("Score", help="Asymmetric trade setup score (0 to 10) combining valuation, support proximity, and oversold indicators.", min_value=0, max_value=10)
+                    "Dist to 52W Low (%)": st.column_config.NumberColumn("Dist to 52W Low (%)", help="Percentage distance above 52-week low. Lower values offer high-probability support entries."),
+                    "P/E Ratio": st.column_config.TextColumn("P/E Ratio", help="Trailing Twelve Month Price-to-Earnings ratio. Lower indicates attractive value."),
+                    "Div Yield (%)": st.column_config.TextColumn("Div Yield (%)", help="Annualized dividend yield percentage."),
+                    "RSI (14)": st.column_config.NumberColumn("RSI (14)", help="Relative Strength Index. <35 indicates oversold rebound potential; >70 is overbought."),
+                    "Recent Pattern": st.column_config.TextColumn("Recent Pattern", help="Candlestick pattern identified in recent trading sessions (Engulfing, Hammer, Shooting Star)."),
+                    "Score": st.column_config.ProgressColumn("Score", help="Asymmetric trade setup score (0 to 10) combining valuation, support proximity, and oversold indicators.", min_value=0, max_value=10)
             }
         )
  
@@ -483,8 +481,6 @@ elif st.session_state.page == 3:
                 st.write(f"* **Bollinger Band Squeeze:** `{'Volatility Tightening' if (df['BB_Upper'].iloc[-1] - df['BB_Lower'].iloc[-1]) / cmp_price < 0.10 else 'Normal Expansion'}`")
             with c2:
                 st.write(f"* **20 DMA (Short-term Mean):** ₹{sma_20} ({'Above' if cmp_price > sma_20 else 'Below'})")
-                st.write(f"* **50 DMA (Medium-term Pivot):** ₹{sma_50} ({'Above' if cmp_price > sma_50 else 
- 
                 st.write(f"* **50 DMA (Medium-term Pivot):** ₹{sma_50} ({'Above' if cmp_price > sma_50 else 'Below'})")
                 st.write(f"* **200 DMA (Long-term Structural Trend):** ₹{sma_200} ({'Bullish Macro' if cmp_price > sma_200 else 'Corrective Macro'})")
  
